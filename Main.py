@@ -7,49 +7,66 @@ import pyautogui
 import time
 import pywhatkit as kit
 import re
+import threading
+import pvporcupine
+from pvrecorder import PvRecorder
+from dotenv import load_dotenv
 
-cohere_client = cohere.Client("XLK2VqK7ocr7Xv3I3ZeHlCN1N335jSoCaiAdYKkS")
+# Load environment variables from .env file
+load_dotenv()
+
+# Get API keys from the environment variables
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
+PORCUPINE_API_KEY = os.getenv('PORCUPINE_API_KEY')
+
+# Initialize Cohere client with the API key from .env
+cohere_client = cohere.Client(COHERE_API_KEY)
 
 recognizer = sr.Recognizer()
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty("voice", voices[1].id)
 
-open_websites = []
+tts_lock = threading.Lock()
 
+open_websites = []
+porcupine = None
+recorder = None
+wake_word_detected = False
 
 def speak(text):
-    print(f"Sia: {text}")
-    engine.say(text)
-    engine.runAndWait()
-
+    with tts_lock:
+        print(f"Sia: {text}")
+        engine.say(text)
+        engine.runAndWait()
 
 def open_website(url):
     webbrowser.open(url)
     open_websites.append(url)
     speak(f"Opened {url}.")
 
-
 def close_website(url):
+    """Closes an open website."""
     if url in open_websites:
         open_websites.remove(url)
         speak(f"Closing {url}.")
-        time.sleep(1)
         pyautogui.hotkey('ctrl', 'w')
     else:
         speak(f"{url} is not currently open.")
 
-
 def generate_cohere_response(command):
-    prompt = f"You are a helpful assistant. Respond kindly to this question: '{command}'"
-    response = cohere_client.generate(
-        model='command-xlarge-nightly',
-        prompt=prompt,
-        max_tokens=200,
-        temperature=0.5
-    )
-    return response.generations[0].text.strip()
+    def cohere_response_async():
+        prompt = f"You are a helpful assistant. Respond kindly to this question: '{command}'"
+        response = cohere_client.generate(
+            model='command-xlarge-nightly',
+            prompt=prompt,
+            max_tokens=200,
+            temperature=0.5
+        )
+        reply = response.generations[0].text.strip()
+        speak(reply)
 
+    threading.Thread(target=cohere_response_async).start()
 
 def play_youtube(command):
     search_item = extract_yt_command(command)
@@ -59,29 +76,21 @@ def play_youtube(command):
     else:
         speak("Sorry, I couldn't understand the song name to play on YouTube.")
 
-
 def extract_yt_command(command):
     pattern = r'play\s+(.*?)\s+on\s+youtube'
     match = re.search(pattern, command, re.IGNORECASE)
     return match.group(1) if match else None
 
-
 def execute_command(command):
     command = command.lower().strip()
 
     if "open google" in command:
-        query = command.replace("open google", "").strip()
-        if query:
-            open_website(f"https://www.google.com/search?q={query}")
-        else:
-            open_website("https://www.google.com")
+        query = command.replace("open google and search for", "").strip()
+        open_website(f"https://www.google.com/search?q={query}" if query else "https://www.google.com")
 
     elif "open youtube" in command:
         query = command.replace("open youtube", "").strip()
-        if query:
-            open_website(f"https://www.youtube.com/results?search_query={query}")
-        else:
-            open_website("https://www.youtube.com")
+        open_website(f"https://www.youtube.com/results?search_query={query}" if query else "https://www.youtube.com")
 
     elif "close google" in command:
         close_website("https://www.google.com")
@@ -95,56 +104,33 @@ def execute_command(command):
     elif "open" in command:
         website = command.replace("open", "").strip()
         if website:
-            website = "https://www." + website + ".com"
-            open_website(website)
+            open_website(f"https://www.{website}.com")
         else:
             speak("Please specify a website to open.")
 
     elif "start" in command:
         query = command.replace("start", "").strip()
-        if query:
-            speak(f"Starting application: {query}")
-            os.system(f"start {query}")
-        else:
-            speak("Please specify an application to start.")
+        speak(f"Starting application: {query}")
+        os.system(f"start {query}")
 
     elif "close" in command:
         website = command.replace("close", "").strip()
-        if website:
-            close_website(website)
-        else:
-            speak("Please specify a website to close.")
+        close_website(website)
 
     elif "shutdown" in command:
-        speak("Are you sure you want to shut down? Please say 'yes laptop' to confirm shut down the whole window.")
-        speak("If you want to shut me down say 'yes Assistant' to confirm shut me down")
+        speak("Are you sure you want to shut down? Say 'yes assistant' to confirm.")
         confirmation = listen_command()
-        if "yes laptop" in confirmation:
-            speak("Goodbye! Shutting down now.")
-            os.system("shutdown /s /t 1")
-        elif "yes assistant" in confirmation:
-            speak("Goodbye, shutting myself off")
+        if "yes assistant" in confirmation:
+            speak("Goodbye, shutting down now.")
             exit(0)
         else:
             speak("Shutdown cancelled.")
-
-    elif "restart" in command:
-        speak("Are you sure you want to restart? Please say 'yes' to confirm.")
-        confirmation = listen_command()
-        if "yes" in confirmation:
-            speak("Restarting now. See you soon!")
-            os.system("shutdown /r /t 1")
-        else:
-            speak("Restart cancelled.")
-
-    else:
-        response = generate_cohere_response(command)
-        speak(response)
-
+        generate_cohere_response(command)
 
 def listen_command():
+    """Listen for a command from the user."""
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.1)
+        recognizer.adjust_for_ambient_noise(source, duration=0.1)  # Speed up noise adjustment
         audio = recognizer.listen(source)
         try:
             command = recognizer.recognize_google(audio).lower()
@@ -155,19 +141,32 @@ def listen_command():
             return None
         except sr.RequestError as e:
             speak("Sorry, I couldn't reach the speech recognition service. Please check your internet connection.")
-            print(f"RequestError: {e}")
             return None
 
+def detect_wake_word():
+    """Detect the wake word using Porcupine (blocking)."""
+    global wake_word_detected
+    porcupine = pvporcupine.create(access_key=PORCUPINE_API_KEY, keywords=["alexa"])
+    recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
+    recorder.start()
+
+    while True:
+        pcm = recorder.read()
+        if porcupine.process(pcm) >= 0:
+            wake_word_detected = True
+            break
 
 def main():
-    speak("Hello! I am sahira ali, your personal assistant. What can I help you with today?")
-    while True:
-        user_command = listen_command()
-        if user_command is None:
-            speak("Could you please repeat that?")
-            continue
-        execute_command(user_command)
+    """Main function to start the voice assistant."""
+    speak("Hello! I am Sia, your personal assistant. Say the wake word once to activate.")
+    detect_wake_word()
 
+    if wake_word_detected:
+        speak("Yes, I'm here. How can I help?")
+        while True:
+            command = listen_command()
+            if command:
+                execute_command(command)
 
 if __name__ == "__main__":
     main()
