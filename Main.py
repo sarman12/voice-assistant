@@ -1,7 +1,6 @@
 import speech_recognition as sr
 import pyttsx3
 import cohere
-import asyncio
 import os
 import webbrowser
 import pyautogui
@@ -10,6 +9,7 @@ import pywhatkit as kit
 import re
 
 cohere_client = cohere.Client("XLK2VqK7ocr7Xv3I3ZeHlCN1N335jSoCaiAdYKkS")
+
 recognizer = sr.Recognizer()
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
@@ -45,13 +45,13 @@ def generate_cohere_response(command):
     response = cohere_client.generate(
         model='command-xlarge-nightly',
         prompt=prompt,
-        max_tokens=100,
+        max_tokens=200,
         temperature=0.5
     )
     return response.generations[0].text.strip()
 
 
-def playYoutube(command):
+def play_youtube(command):
     search_item = extract_yt_command(command)
     if search_item:
         speak(f"Playing {search_item} on YouTube")
@@ -66,7 +66,7 @@ def extract_yt_command(command):
     return match.group(1) if match else None
 
 
-async def execute_command(command):
+def execute_command(command):
     command = command.lower().strip()
 
     if "open google" in command:
@@ -90,7 +90,7 @@ async def execute_command(command):
         close_website("https://www.youtube.com")
 
     elif "play" in command and "on youtube" in command:
-        playYoutube(command)
+        play_youtube(command)
 
     elif "open" in command:
         website = command.replace("open", "").strip()
@@ -101,7 +101,7 @@ async def execute_command(command):
             speak("Please specify a website to open.")
 
     elif "start" in command:
-        query = command.replace("start", "").strip() 
+        query = command.replace("start", "").strip()
         if query:
             speak(f"Starting application: {query}")
             os.system(f"start {query}")
@@ -144,7 +144,7 @@ async def execute_command(command):
 
 def listen_command():
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source)
+        recognizer.adjust_for_ambient_noise(source, duration=0.1)
         audio = recognizer.listen(source)
         try:
             command = recognizer.recognize_google(audio).lower()
@@ -159,15 +159,15 @@ def listen_command():
             return None
 
 
-async def main():
-    speak("Hello! I am Sia, your personal assistant. What can I help you with today?")
+def main():
+    speak("Hello! I am sahira ali, your personal assistant. What can I help you with today?")
     while True:
         user_command = listen_command()
         if user_command is None:
             speak("Could you please repeat that?")
             continue
-        await execute_command(user_command)
+        execute_command(user_command)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
