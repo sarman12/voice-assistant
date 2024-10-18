@@ -1,44 +1,54 @@
-import speech_recognition as sr
-import pyttsx3
-import cohere
-import os
+import requests  # For making HTTP requests
+import json  # For parsing JSON data
+import speech_recognition as sr  # For voice recognition
+import pyttsx3  # For text-to-speech functionality
+import cohere  # For AI text generation
+import os  # For interacting with the operating system
 import webbrowser
 import pyautogui
-import time
 import pywhatkit as kit
 import re
 import threading
 import pvporcupine
-from pvrecorder import PvRecorder
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
+import playsound
+import time
+from pvrecorder import PvRecorder
 load_dotenv()
 
-# Get API keys from the environment variables
-COHERE_API_KEY = os.getenv('COHERE_API_KEY')
-PORCUPINE_API_KEY = os.getenv('PORCUPINE_API_KEY')
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+XI_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+PORCUPINE_API_KEY = os.getenv("PORCUPINE_API_KEY")
+VOICE_ID = "cgSgspJ2msm6clMCkdW9"  
+OUTPUT_PATH = "C:/Users/asus/Desktop/voice assistant/output_temp.mp3"
 
-# Initialize Cohere client with the API key from .env
 cohere_client = cohere.Client(COHERE_API_KEY)
 
 recognizer = sr.Recognizer()
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty("voice", voices[1].id)
-
 tts_lock = threading.Lock()
-
 open_websites = []
-porcupine = None
-recorder = None
 wake_word_detected = False
-
-def speak(text):
+text_limit_size = 7000 
+def speak_pytts(text):
     with tts_lock:
-        print(f"Sia: {text}")
         engine.say(text)
         engine.runAndWait()
+
+def speak(text):
+    global text_limit_size
+    if text_limit_size > 0 and len(text) <= text_limit_size:
+        with tts_lock:
+            print(f"Siri: {text}")
+            text_to_speech(text, VOICE_ID, OUTPUT_PATH)
+            text_limit_size -= len(text)
+            playsound.playsound(OUTPUT_PATH)
+            os.remove(OUTPUT_PATH)
+    else:
+        print(f"Siri: {text} (using pyttsx3 due to text limit reached)")
+        speak_pytts(text)
 
 def open_website(url):
     webbrowser.open(url)
@@ -46,7 +56,6 @@ def open_website(url):
     speak(f"Opened {url}.")
 
 def close_website(url):
-    """Closes an open website."""
     if url in open_websites:
         open_websites.remove(url)
         speak(f"Closing {url}.")
@@ -55,19 +64,17 @@ def close_website(url):
         speak(f"{url} is not currently open.")
 
 def generate_cohere_response(command):
-    def cohere_response_async():
-        prompt = f"You are a helpful assistant. Respond kindly to this question: '{command}'"
-        response = cohere_client.generate(
-            model='command-xlarge-nightly',
-            prompt=prompt,
-            max_tokens=200,
-            temperature=0.5
-        )
-        reply = response.generations[0].text.strip()
-        speak(reply)
+    prompt = f"You are a helpful assistant. Respond kindly to this question: '{command}'"
+    response = cohere_client.generate(
+        model='command-xlarge-nightly',
+        prompt=prompt,
+        max_tokens=100,
+        temperature=0.5
+    )
+    reply = response.generations[0].text.strip()
+    return reply
 
-    threading.Thread(target=cohere_response_async).start()
-
+# Function to play YouTube videos
 def play_youtube(command):
     search_item = extract_yt_command(command)
     if search_item:
@@ -125,12 +132,13 @@ def execute_command(command):
             exit(0)
         else:
             speak("Shutdown cancelled.")
-        generate_cohere_response(command)
+    else:
+        reply = generate_cohere_response(command)
+        speak(reply)
 
 def listen_command():
-    """Listen for a command from the user."""
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.1)  # Speed up noise adjustment
+        recognizer.adjust_for_ambient_noise(source, duration=0.1)
         audio = recognizer.listen(source)
         try:
             command = recognizer.recognize_google(audio).lower()
@@ -139,14 +147,14 @@ def listen_command():
         except sr.UnknownValueError:
             speak("Sorry, I did not understand that.")
             return None
-        except sr.RequestError as e:
+        except sr.RequestError:
             speak("Sorry, I couldn't reach the speech recognition service. Please check your internet connection.")
             return None
 
+# Detect wake word using Porcupine
 def detect_wake_word():
-    """Detect the wake word using Porcupine (blocking)."""
     global wake_word_detected
-    porcupine = pvporcupine.create(access_key=PORCUPINE_API_KEY, keywords=["alexa"])
+    porcupine = pvporcupine.create(access_key=PORCUPINE_API_KEY, keywords=["hey siri"])
     recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
     recorder.start()
 
@@ -156,9 +164,34 @@ def detect_wake_word():
             wake_word_detected = True
             break
 
+# Eleven Labs: Text to speech
+def text_to_speech(text, voice_id, output_path):
+    tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+    headers = {
+        "Accept": "application/json",
+        "xi-api-key": XI_API_KEY
+    }
+    data = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.8,
+            "style": 0.0,
+            "use_speaker_boost": True
+        }
+    }
+    response = requests.post(tts_url, headers=headers, json=data, stream=True)
+
+    if response.ok:
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024):
+                f.write(chunk)
+    else:
+        print(response.text)
+
 def main():
-    """Main function to start the voice assistant."""
-    speak("Hello! I am Sia, your personal assistant. Say the wake word once to activate.")
+    speak("Hello! I am Siri, your personal assistant. Say the wake word once to activate.")
     detect_wake_word()
 
     if wake_word_detected:
