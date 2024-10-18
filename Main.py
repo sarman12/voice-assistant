@@ -1,9 +1,9 @@
-import requests  # For making HTTP requests
-import json  # For parsing JSON data
-import speech_recognition as sr  # For voice recognition
-import pyttsx3  # For text-to-speech functionality
-import cohere  # For AI text generation
-import os  # For interacting with the operating system
+import requests
+import json 
+import speech_recognition as sr 
+import pyttsx3
+import cohere
+import os 
 import webbrowser
 import pyautogui
 import pywhatkit as kit
@@ -74,7 +74,6 @@ def generate_cohere_response(command):
     reply = response.generations[0].text.strip()
     return reply
 
-# Function to play YouTube videos
 def play_youtube(command):
     search_item = extract_yt_command(command)
     if search_item:
@@ -151,7 +150,6 @@ def listen_command():
             speak("Sorry, I couldn't reach the speech recognition service. Please check your internet connection.")
             return None
 
-# Detect wake word using Porcupine
 def detect_wake_word():
     global wake_word_detected
     porcupine = pvporcupine.create(access_key=PORCUPINE_API_KEY, keywords=["hey siri"])
@@ -164,7 +162,6 @@ def detect_wake_word():
             wake_word_detected = True
             break
 
-# Eleven Labs: Text to speech
 def text_to_speech(text, voice_id, output_path):
     tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
     headers = {
