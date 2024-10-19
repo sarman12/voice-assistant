@@ -187,7 +187,7 @@ def open_website(url):
     open_websites.append(url)
     speak(f"Opened {url}.")
     
-def open(command):
+def open_web(command):
     query = command.replace("open", "").strip()
 
     if "google and search for" in query:
@@ -232,7 +232,7 @@ def execute_command(command):
     global wake_word_detected
     command = command.lower().strip()
     if "open" in command:
-        open()
+        open_web(command)
         
     elif "tell me a joke" in command:
         tell_joke()
@@ -339,6 +339,7 @@ def main():
             command = listen_command()
             if command:
                 execute_command(command)
+
 
 
 if __name__ == "__main__":
