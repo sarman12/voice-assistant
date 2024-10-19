@@ -1,5 +1,8 @@
 
 def main():
+    
+            # Create and start a thread for text_to_speech
+           
     global assistant_active
 
     # Function to activate the assistant
