@@ -15,6 +15,10 @@ import playsound
 import time
 from pvrecorder import PvRecorder
 from newsapi import NewsApiClient
+import tkinter as tk
+import threading
+import pystray
+from PIL import Image, ImageDraw
 
 
 load_dotenv()
@@ -58,7 +62,7 @@ def speak(text):
     #         playsound.playsound(OUTPUT_PATH)
     #         os.remove(OUTPUT_PATH)
     # else:
-    #     print(f"Siri: {text} (using pyttsx3 due to text limit reached)")
+        print(f"Siri: {text} (using pyttsx3 due to text limit reached)")
         speak_pytts(text)
 
 
@@ -134,18 +138,49 @@ def generate_cohere_response(command):
     reply = response.generations[0].text.strip()
     return reply
 
-def execute_command(command):
-    command = command.lower().strip()
-    
-    if "tell me a joke" in command:
-        tell_joke()
-    elif "open google" in command and "search for" in command:
-        query = command.replace("open google", "").replace("search for", "").strip()
-        open_website(f"https://www.google.com/search?q={query}" if query else "https://www.google.com")
+def play_youtube(command):
+    search_item = extract_yt_command(command)
+    if search_item:
+        speak(f"Playing {search_item} on YouTube")
+        kit.playonyt(search_item)
+    else:
+        speak("Sorry, I couldn't understand the song name to play on YouTube.")
 
-    elif "open youtube" in command:
-        query = command.replace("open youtube", "").strip()
-        open_website(f"https://www.youtube.com/results?search_query={query}" if query else "https://www.youtube.com")
+
+def extract_yt_command(command):
+    pattern = r'play\s+(.*?)\s+on\s+youtube'
+    match = re.search(pattern, command, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def execute_command(command, window=None):
+    global wake_word_detected
+    command = command.lower().strip()
+    if "open" in command:
+        query = command.split("open", 1)[1].strip()
+        
+        if "google and search for" in query:
+            search_query = query.split("google and search for", 1)[1].strip()
+            if search_query:
+                website = f"https://www.google.com/search?q={search_query}"
+                open_website(website)
+            else:
+                speak("I didn't catch what you want to search for. Please try again.")
+
+        elif "youtube and search for" in query:
+            search_query = query.split("youtube and search for", 1)[1].strip()
+            if search_query:
+                website = f"https://www.youtube.com/results?search_query={search_query}"
+                open_website(website)
+            else:
+                speak("I didn't catch the search term for YouTube. Please try again.")
+
+        else:
+            speak(f"Opening {query}.")
+            open_website(f"https://www.{query}.com")
+        
+    elif "tell me a joke" in command:
+        tell_joke()
 
     elif "close google" in command:
         close_website("https://www.google.com")
@@ -153,7 +188,6 @@ def execute_command(command):
     elif "close youtube" in command:
         close_website("https://www.youtube.com")
 
-    
     elif "open" in command:
         website = command.replace("open", "").strip()
         if website:
@@ -166,11 +200,13 @@ def execute_command(command):
         speak(f"Starting application: {query}")
         os.system(f"start {query}")
         
-
     elif "close" in command:
         website = command.replace("close", "").strip()
         close_website(website)
         
+    elif "play" in command and "on youtube" in command:
+        play_youtube(command)
+
     elif "set a timer" in command:
         duration = extract_time(command)
         if duration is not None:
@@ -178,25 +214,32 @@ def execute_command(command):
         else:
             speak("I didn't catch the time. Please specify in minutes and seconds.")
 
-
-    elif "shutdown siri" in command:
-        speak("Are you sure you want to shut me down? Say 'yes' to confirm.")
+    elif "shutdown assistant" in command:
+        speak("Are you sure you want to shut me down? Say 'deactivate' to confirm")
         confirmation = listen_command()
-        if "yes" in confirmation:
-            speak("Goodbye, shutting down now.")
-            exit(0)
+        
+        if confirmation:
+            if "deactivate" in confirmation:
+                speak("Goodbye, shutting down now.")
+                exit(0)
+            else:
+                speak("I didn't catch that. Please say 'yes' to shut down or 'no' to cancel.")
         else:
-            speak("Shutdown cancelled.")
+            speak("I didn't catch your response. Please try again.")
             
     elif "shutdown the computer" in command:
         speak("Are you sure you want to shut down the computer? Say 'ok' to confirm.")
         confirmation = listen_command()
-        if "ok" in confirmation:
-            speak("Goodbye, shutting down the computer.")
-            os.system("shutdown /s /t 5")
+        
+        if confirmation:
+            if "ok" in confirmation:
+                speak("Goodbye, shutting down the computer.")
+                os.system("shutdown /s /t 5")
+            else:
+                speak("Shutdown cancelled.")
         else:
-            speak("Shutdown cancelled.")
-            
+            speak("I didn't catch your response. Please try again.")
+
     elif "news" in command and "headlines" in command:
         speak("Which category would you like news from? For example, business, technology, sports, entertainment, or health.")
         category = listen_command()
@@ -219,11 +262,12 @@ def listen_command():
             print(f"User: {command}")
             return command
         except sr.UnknownValueError:
-            speak("Sorry, I did not understand that.")
+            speak("Sorry, I didn't catch that. Can you please repeat?")
             return None
         except sr.RequestError:
             speak("Sorry, I couldn't reach the speech recognition service. Please check your internet connection.")
             return None
+
         
 def text_to_speech(text, voice_id, output_path):
     tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
@@ -258,9 +302,12 @@ def detect_wake_word():
 
     while True:
         pcm = recorder.read()
-        if porcupine.process(pcm) >= 0:
+        keyword_index = porcupine.process(pcm)
+        if keyword_index >= 0:
             wake_word_detected = True
             break
+
+
 
 def main():
     speak("Hello! I am Siri, your personal assistant. Say the wake word once to activate.")
@@ -272,6 +319,7 @@ def main():
             command = listen_command()
             if command:
                 execute_command(command)
+
 
 if __name__ == "__main__":
     main()
