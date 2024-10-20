@@ -32,7 +32,7 @@ def speak_pytts(text):
         engine.say(text)
         engine.runAndWait()
 
-VOICE_ID = "cgSgspJ2msm6clMCkdW9"
+VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
 XI_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 speak_done_event = Event()
 text_limit_size = 6000
@@ -287,6 +287,7 @@ def main():
     detect_wake_word()
     if wake_word_detected:
         speak("Yes, I'm here. How can I help?")
+        processing_command=False
         while True:
             if not processing_command:
                 command = listen_command()
