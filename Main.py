@@ -7,16 +7,11 @@ import webbrowser
 import pyautogui
 import pywhatkit as kit
 import re
-import threading
-import pvporcupine
-from dotenv import load_dotenv
 import time
-from pvrecorder import PvRecorder
+from dotenv import load_dotenv
 from newsapi import NewsApiClient
-import io
-from pydub import AudioSegment
-from pydub.playback import play
-from threading import Event
+from pvrecorder import PvRecorder
+import pvporcupine
 
 load_dotenv()
 recognizer = sr.Recognizer()
@@ -25,60 +20,11 @@ wake_word_detected = False
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty("voice", voices[1].id)
-tts_lock = threading.Lock()
-
-def speak_pytts(text):
-    with tts_lock:
-        engine.say(text)
-        engine.runAndWait()
-
-VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
-XI_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-speak_done_event = Event()
-text_limit_size = 6000
-
-def text_to_speech(text, voice_id):
-    tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-    headers = {
-        "Accept": "application/json",
-        "xi-api-key": XI_API_KEY
-    }
-    data = {
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.8,
-            "style": 0.0,
-            "use_speaker_boost": True
-        }
-    }
-    response = requests.post(tts_url, headers=headers, json=data, stream=True)
-
-    if response.ok:
-        audio_data = io.BytesIO()
-        for chunk in response.iter_content(chunk_size=1024):
-            if chunk:
-                audio_data.write(chunk)
-        audio_data.seek(0)
-        audio = AudioSegment.from_file(audio_data, format="mp3")
-        play(audio)
-        speak_done_event.set()
-    else:
-        print("Error:", response.text)
 
 def speak(text):
-    global XI_API_KEY
-    if text_limit_size > 0:
-        with tts_lock:
-            print(f"Siri: {text}")
-            speak_done_event.clear()
-            tts_thread = threading.Thread(target=text_to_speech, args=(text, VOICE_ID))
-            tts_thread.start()
-            speak_done_event.wait()
-    else:
-        print(f"Siri: {text} (using pyttsx3 due to text limit reached)")
-        speak_pytts(text)
+    print(f"Siri: {text} (using pyttsx3)")
+    engine.say(text)
+    engine.runAndWait()
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
@@ -88,10 +34,9 @@ def SpecificNews(text):
         specific_news_url = f"https://newsapi.org/v2/everything?q={text}&apiKey={NEWS_API_KEY}"
         response = requests.get(specific_news_url)
         news_data = response.json()
-        articles = news_data.get('articles', [])
         
-        if articles:
-            top_articles = articles[:10]
+        if 'articles' in news_data:
+            top_articles = news_data['articles'][:10]
             news = [i['title'] for i in top_articles]
             return f"Here are the top 10 news about {text}: " + ", ".join(news)
         else:
@@ -267,11 +212,9 @@ def listen_command():
             speak("Sorry, I couldn't reach the speech recognition service. Please check your internet connection.")
             return None
 
-        
-PORCUPINE_API_KEY = os.getenv("PORCUPINE_API_KEY")
 def detect_wake_word():
     global wake_word_detected
-    porcupine = pvporcupine.create(access_key=PORCUPINE_API_KEY, keywords=["hey siri"])
+    porcupine = pvporcupine.create(access_key=os.getenv("PORCUPINE_API_KEY"), keywords=["hey siri"])
     recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
     recorder.start()
 
@@ -287,17 +230,10 @@ def main():
     detect_wake_word()
     if wake_word_detected:
         speak("Yes, I'm here. How can I help?")
-        processing_command=False
         while True:
-            if not processing_command:
-                command = listen_command()
-                if command:
-                    processing_command = True
-                    execute_command(command)
-                    processing_command = False
-
-
-
+            command = listen_command()
+            if command:
+                execute_command(command)
 
 if __name__ == "__main__":
     main()
