@@ -11,7 +11,6 @@ import time
 from dotenv import load_dotenv
 from newsapi import NewsApiClient
 from pvrecorder import PvRecorder
-import pvporcupine
 
 load_dotenv()
 recognizer = sr.Recognizer()
